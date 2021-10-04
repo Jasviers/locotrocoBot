@@ -24,6 +24,8 @@ class fighting_commands(commands.Cog):
         await ctx.send(f'Work In Progress')
 
     @commands.command(name="framedata", aliases=["fd"])
-    async def frame_data(self, ctx, character):
+    async def frame_data(self, ctx, character=None):
+        if not character:
+            await ctx.send("Indique el personaje")
         await ctx.send(f'Work In Progress')
     
