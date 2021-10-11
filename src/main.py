@@ -4,8 +4,11 @@ from music_commands import music_commands
 from fighting_commands import fighting_commands
 from game_commands import game_commands
 
-with open("token.txt", "r") as token:
-    TOKEN = token.readline()
+import configparser
+
+config = configparser.ConfigParser()
+config.read("config.ini")
+TOKEN = config["TOKENS"]["discord"]
 
 bot = commands.Bot(command_prefix="-")
 
