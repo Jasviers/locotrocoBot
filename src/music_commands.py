@@ -129,49 +129,7 @@ class music_commands(commands.Cog):
 
     @commands.command(name="lyrics", aliases=["lcs"])
     async def lyrics(self, ctx):
-        if self.actual_song:
-            try:
-                song = self.genius.search_song(self.actual_song)
-            except:
-                await ctx.send("Song not found", delete_after=15)
-                return
-            lyrics = song.lyrics.split(" ")
-            per_page = 3000
-            pages = math.ceil(len(lyrics) / per_page)
-            cur_page = 1
-            chunk = lyrics[:per_page]
-            linebreak = "\n"
-            message = await ctx.send(f"Page {cur_page}/{pages}:\n{linebreak.join(chunk)}")
-            await message.add_reaction("◀️")
-            await message.add_reaction("▶️")
-            active = True
-
-            def check(reaction, user):
-                return user == ctx.author and str(reaction.emoji) in ["◀️", "▶️"]
-
-            while active:
-                try:
-                    reaction, user = await self.bot.wait_for("reaction_add", timeout=60, check=check)
-                
-                    if str(reaction.emoji) == "▶️" and cur_page != pages:
-                        cur_page += 1
-                        if cur_page != pages:
-                            chunk = lyrics[(cur_page-1)*per_page:cur_page*per_page]
-                        else:
-                            chunk = lyrics[(cur_page-1)*per_page:]
-                        await message.edit(content=f"Page {cur_page}/{pages}:\n{linebreak.join(chunk)}")
-                        await message.remove_reaction(reaction, user)
-
-                    elif str(reaction.emoji) == "◀️" and cur_page > 1:
-                        cur_page -= 1
-                        chunk = lyrics[(cur_page-1)*per_page:cur_page*per_page]
-                        await message.edit(content=f"Page {cur_page}/{pages}:\n{linebreak.join(chunk)}")
-                        await message.remove_reaction(reaction, user)
-                except:
-                    await message.delete()
-                    active = False
-        else:
-            await ctx.send("No song playing", delete_after=15)
+        await ctx.send("work in progress", delete_after=15)
 
     def _play(self, ctx):
         if self.queue:
