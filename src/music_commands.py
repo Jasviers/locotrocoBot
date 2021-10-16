@@ -1,9 +1,10 @@
-from discord import channel
+from discord import channel, Embed
 from discord.ext import commands
 from discord.utils import get
 from youtube_dl import YoutubeDL
 from discord import FFmpegPCMAudio
 from urllib.parse import urlparse
+from DiscordUtils import Pagination
 import lyricsgenius
 
 import configparser
@@ -23,7 +24,9 @@ class music_commands(commands.Cog):
         self.actual_song = ""
         self.voice = None
         self.tiratela_url = "https://www.youtube.com/watch?v=lHvPohMa_ak"
+        self.a = "https://www.youtube.com/watch?v=A30gsOSHswM"
         self.LIMIT = 150
+        self.MAX_CHARACTERS = 1000
         self.YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
@@ -57,6 +60,21 @@ class music_commands(commands.Cog):
             return
         try:
             self.queue = self._search(self.tiratela_url) + self.queue
+        except:
+            await ctx.send("Unexpected error", delete_after=15)
+        if not self.voice.is_playing():
+            await self._play(ctx)
+        else:
+            await self.skip(ctx)
+
+    @commands.command(name="a")
+    async def a_function(self, ctx):
+        try:
+            await self.join(ctx)
+        except:
+            return
+        try:
+            self.queue = self._search(self.a) + self.queue
         except:
             await ctx.send("Unexpected error", delete_after=15)
         if not self.voice.is_playing():
@@ -135,41 +153,23 @@ class music_commands(commands.Cog):
             except:
                 await ctx.send("Song not found", delete_after=15)
                 return
-            lyrics = song.lyrics.split(" ")
-            per_page = 3000
-            pages = math.ceil(len(lyrics) / per_page)
-            cur_page = 1
-            chunk = lyrics[:per_page]
-            linebreak = "\n"
-            message = await ctx.send(f"Page {cur_page}/{pages}:\n{linebreak.join(chunk)}")
-            await message.add_reaction("◀️")
-            await message.add_reaction("▶️")
-            active = True
-
-            def check(reaction, user):
-                return user == ctx.author and str(reaction.emoji) in ["◀️", "▶️"]
-
-            while active:
-                try:
-                    reaction, user = await self.bot.wait_for("reaction_add", timeout=60, check=check)
-                
-                    if str(reaction.emoji) == "▶️" and cur_page != pages:
-                        cur_page += 1
-                        if cur_page != pages:
-                            chunk = lyrics[(cur_page-1)*per_page:cur_page*per_page]
-                        else:
-                            chunk = lyrics[(cur_page-1)*per_page:]
-                        await message.edit(content=f"Page {cur_page}/{pages}:\n{linebreak.join(chunk)}")
-                        await message.remove_reaction(reaction, user)
-
-                    elif str(reaction.emoji) == "◀️" and cur_page > 1:
-                        cur_page -= 1
-                        chunk = lyrics[(cur_page-1)*per_page:cur_page*per_page]
-                        await message.edit(content=f"Page {cur_page}/{pages}:\n{linebreak.join(chunk)}")
-                        await message.remove_reaction(reaction, user)
-                except:
-                    await message.delete()
-                    active = False
+            embed_list = []
+            pages = math.ceil(len(song.lyrics)/self.MAX_CHARACTERS)
+            print(pages)
+            for i in range(pages):
+                if i+1 < pages:
+                    embed_list.append(Embed(color=ctx.author.color).add_field(
+                        name=self.actual_song, value=song.lyrics[self.MAX_CHARACTERS*i:self.MAX_CHARACTERS*(i+1)]+f"\nPage {i+1}/{pages}"))
+                else:
+                    embed_list.append(Embed(color=ctx.author.color).add_field(
+                        name=self.actual_song, value=song.lyrics[self.MAX_CHARACTERS*i::]+f"\nPage {i+1}/{pages}"))
+                    print(song.lyrics[self.MAX_CHARACTERS*i::])
+            paginator = Pagination.CustomEmbedPaginator(ctx, remove_reactions=True)
+            paginator.add_reaction('⏮️', "first")
+            paginator.add_reaction('⏪', "back")
+            paginator.add_reaction('⏩', "next")
+            paginator.add_reaction('⏭️', "last")
+            await paginator.run(embed_list)
         else:
             await ctx.send("No song playing", delete_after=15)
 

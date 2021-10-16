@@ -2,3 +2,4 @@ discord.py
 youtube-dl
 lyricsgenius
 PyNaCl
+discordutils
