@@ -7,27 +7,21 @@ from urllib.parse import urlparse
 from DiscordUtils import Pagination
 import lyricsgenius
 
-import configparser
 import asyncio
 import random
 import math
 import re
+import os
 
 class music_commands(commands.Cog):
 
     def __init__(self, bot):
-        self.config = configparser.ConfigParser()
-        self.config.read("config.ini")
         self.bot = bot
-        self.genius = lyricsgenius.Genius(self.config["TOKENS"]["genius"])
-        self.queue = []
-        self.actual_song = ""
-        self.voice = None
+        self.genius = lyricsgenius.Genius(os.getenv("GENIUS_TOKEN"))
         self.tiratela_url = "https://www.youtube.com/watch?v=lHvPohMa_ak"
         self.a = "https://www.youtube.com/watch?v=A30gsOSHswM"
         self.LIMIT = 150
         self.MAX_CHARACTERS = 1000
-        self.YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
         self.playlist_re = re.compile(r"\b(list)\b")
