@@ -25,7 +25,6 @@ class music_commands(commands.Cog):
         self.tiratela_url = "https://www.youtube.com/watch?v=lHvPohMa_ak"
         self.a = "https://www.youtube.com/watch?v=A30gsOSHswM"
         self.fart = "https://www.youtube.com/watch?v=W_FRPoJIrlI"
-        self.LIMIT = 150
         self.MAX_CHARACTERS = 1000
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
@@ -37,7 +36,7 @@ class music_commands(commands.Cog):
     @commands.command(name="play", aliases=["p"])
     async def play(self, ctx, *args):
         if not args:
-            await ctx.send("Song name is required", delete_after=15)
+            await ctx.send(embed=Embed(title="", description="Song name is required", color=Color.green()), delete_after=60)
             return
         query = " ".join(args)
         voice = ctx.voice_client
@@ -47,9 +46,19 @@ class music_commands(commands.Cog):
 
         player = self._get_player(ctx)
 
-        source = await YTDLSource.create_source(ctx, query, loop=self.bot.loop)
-
-        await player.queue.put(source)
+        url_result = urlparse(query)
+        if all([url_result.scheme, url_result.netloc, url_result.path, url_result.query]) and self.playlist_re.search(url_result.query):
+            if self.watch_re.search(query):
+                list_query = [i for i in url_result.query.split("&") if self.playlist_re.search(i)]
+                query = "".join([url_result.netloc, "/playlist?", list_query[0]])
+            source = await YTDLSource.create_source(ctx, query, loop=self.bot.loop)
+            await player.queue.put(source)
+            sources = await YTDLSource.create_sources(ctx, query, loop=self.bot.loop)
+            for source in sources:
+                await player.queue.put(source)            
+        else:
+            source = await YTDLSource.create_source(ctx, query, loop=self.bot.loop)
+            await player.queue.put(source)
 
     @commands.command(name="tiratela")
     async def tiratela(self, ctx):
@@ -90,14 +99,13 @@ class music_commands(commands.Cog):
     @commands.command(name="queue", aliases=["q"])
     async def queue_function(self, ctx):
         vc = ctx.voice_client
-
         if not vc or not vc.is_connected():
-            embed = discord.Embed(title="", description="I'm not connected to a voice channel", color=discord.Color.green())
+            embed = Embed(title="", description="I'm not connected to a voice channel", color=Color.green())
             return await ctx.send(embed=embed, delete_after=60)
 
         player = self._get_player(ctx)
         if player.queue.empty():
-            embed = discord.Embed(title="", description="queue is empty", color=discord.Color.green())
+            embed = Embed(title="", description="Queue is empty", color=Color.green())
             return await ctx.send(embed=embed, delete_after=60)
 
         seconds = vc.source.duration % (24 * 3600) 
@@ -110,7 +118,6 @@ class music_commands(commands.Cog):
         else:
             duration = "%02dm %02ds" % (minutes, seconds)
 
-        # Grabs the songs in the queue...
         upcoming = list(itertools.islice(player.queue._queue, 0, int(len(player.queue._queue))))
         fmt = '\n'.join(f"`{(upcoming.index(_)) + 1}.` [{_['title']}]({_['webpage_url']}) | ` {duration} Requested by: {_['requester']}`\n" for _ in upcoming)
         fmt = f"\n__Now Playing__:\n[{vc.source.title}]({vc.source.web_url}) | ` {duration} Requested by: {vc.source.requester}`\n\n__Up Next:__\n" + fmt + f"\n**{len(upcoming)} songs in queue**"
@@ -202,7 +209,7 @@ class music_commands(commands.Cog):
                 await channel.connect()
             except asyncio.TimeoutError:
                 raise VoiceConnectionError(f'Connecting to channel: <{channel}> timed out.')
-        await ctx.send(f'**Joined `{channel}`**', delete_after=15)
+        await ctx.send(embed=Embed(title="", description=f'Joined `{channel}`', color=Color.green()), delete_after=10)
 
     @commands.command(name="leave", aliases=["lv"])
     async def leave(self, ctx):
@@ -269,42 +276,19 @@ class music_commands(commands.Cog):
             pass
 
     async def __local_check(self, ctx):
-        """A local check which applies to all commands in this cog."""
         if not ctx.guild:
             raise commands.NoPrivateMessage
         return True
 
     async def __error(self, ctx, error):
-        """A local error handler for all errors arising from commands in this cog."""
         if isinstance(error, commands.NoPrivateMessage):
             try:
-                return await ctx.send('This command can not be used in Private Messages.')
+                return await ctx.send(embed=Embed(title="", description='This command can not be used in Private Messages.', color=Color.green()))
             except discord.HTTPException:
                 pass
         elif isinstance(error, InvalidVoiceChannel):
-            await ctx.send('Error connecting to Voice Channel. '
-                           'Please make sure you are in a valid channel or provide me with one')
-
+            await ctx.send(embed=Embed(title="", description='Error connecting to Voice Channel.\n \
+             Please make sure you are in a valid channel or provide me with one', color=Color.green()))
         print('Ignoring exception in command {}:'.format(ctx.command), file=sys.stderr)
         traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
 
-    def _search(self, query):
-        url_result = urlparse(query)
-        i = 0
-        vlist = []
-        if all([url_result.scheme, url_result.netloc, url_result.path]):
-            if url_result.query and self.playlist_re.search(url_result.query):
-                if self.watch_re.search(query):
-                    list_query = [i for i in url_result.query.split("&") if self.playlist_re.search(i)]
-                    query = "".join([url_result.netloc, "/playlist?", list_query[0]])
-                with YoutubeDL(self.YDL_OPTIONS) as ydl:
-                    info = ydl.extract_info(query, download=False)
-                entries_len = len(info['entries'])
-                while i < entries_len and i < self.LIMIT:
-                    elem = info['entries'][i]
-                    vlist.append({'source': elem['formats'][0]['url'], 'title': elem['title']})
-                    i += 1
-                return vlist
-            else:
-                with YoutubeDL(self.YDL_OPTIONS) as ydl:
-                    info = ydl.extract_info(query, download=False)

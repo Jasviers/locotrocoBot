@@ -8,6 +8,7 @@ import random
 from functools import partial
 from urllib.parse import urlparse
 
+LIMIT = 150
 
 ytdlopts = {
     'format': 'bestaudio',
@@ -58,8 +59,26 @@ class YTDLSource(discord.PCMVolumeTransformer):
         embed = discord.Embed(title="", description=f"Queued [{data['title']}]({data['webpage_url']}) [{ctx.author.mention}]", color=discord.Color.green())
         await ctx.send(embed=embed, delete_after=60)
 
-       
         return {'webpage_url': data['webpage_url'], 'requester': ctx.author, 'title': data['title']}
+
+    @classmethod
+    async def create_sources(cls, ctx, search: str, *, loop):
+        loop = loop or asyncio.get_event_loop()
+        playlist, i = [], 1
+
+        to_run = partial(ytdl.extract_info, url=search, download=False)
+        data = await loop.run_in_executor(None, to_run)
+        len_data = len(data["entries"])
+
+        while len_data > i and i < LIMIT:
+            entrie = data["entries"][i]
+            playlist.append({'webpage_url': entrie['webpage_url'], 'requester': ctx.author, 'title': entrie['title']})
+            i += 1
+
+        embed = discord.Embed(title="", description=f"Playlist was added to the queue.", color=discord.Color.green())
+        await ctx.send(embed=embed, delete_after=60)
+
+        return playlist
 
     @classmethod
     async def regather_stream(cls, data, *, loop):
@@ -122,7 +141,7 @@ class MusicPlayer:
             self.actual_song = None
 
     def shuffle(self):
-        random.shuffle(self.queue)
+        random.shuffle(self.queue._queue)
 
     def destroy(self, guild):
         return self.bot.loop.create_task(self.cog.cleanup(guild))
