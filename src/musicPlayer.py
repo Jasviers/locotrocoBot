@@ -64,7 +64,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def create_sources(cls, ctx, search: str, *, loop):
         loop = loop or asyncio.get_event_loop()
-        playlist, i = [], 1
+        playlist, i = [], 0
 
         to_run = partial(ytdl.extract_info, url=search, download=False)
         data = await loop.run_in_executor(None, to_run)
@@ -137,7 +137,10 @@ class MusicPlayer:
             await self.next.wait()
 
             source.cleanup()
-            await self.np.delete()
+            try:
+                await self.np.delete()
+            except discord.errors.NotFound as e:
+                print(e)
             self.actual_song = None
 
     def shuffle(self):

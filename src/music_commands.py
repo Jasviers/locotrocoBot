@@ -51,8 +51,6 @@ class music_commands(commands.Cog):
             if self.watch_re.search(query):
                 list_query = [i for i in url_result.query.split("&") if self.playlist_re.search(i)]
                 query = "".join([url_result.netloc, "/playlist?", list_query[0]])
-            source = await YTDLSource.create_source(ctx, query, loop=self.bot.loop)
-            await player.queue.put(source)
             sources = await YTDLSource.create_sources(ctx, query, loop=self.bot.loop)
             for source in sources:
                 await player.queue.put(source)            
@@ -119,11 +117,30 @@ class music_commands(commands.Cog):
             duration = "%02dm %02ds" % (minutes, seconds)
 
         upcoming = list(itertools.islice(player.queue._queue, 0, int(len(player.queue._queue))))
-        fmt = '\n'.join(f"`{(upcoming.index(_)) + 1}.` [{_['title']}]({_['webpage_url']}) | ` {duration} Requested by: {_['requester']}`\n" for _ in upcoming)
+        fmt = '\n'.join(f"`{(upcoming.index(_)) + 1}.` [{_['title']}]({_['webpage_url']}) | ` Requested by: {_['requester']}`\n" for _ in upcoming)
         fmt = f"\n__Now Playing__:\n[{vc.source.title}]({vc.source.web_url}) | ` {duration} Requested by: {vc.source.requester}`\n\n__Up Next:__\n" + fmt + f"\n**{len(upcoming)} songs in queue**"
-        embed = Embed(title=f'Queue for {ctx.guild.name}', description=fmt, color=discord.Color.green())
+        if len(fmt) < self.MAX_CHARACTERS:
+            embed = Embed(title=f'Queue for {ctx.guild.name}', description=fmt, color=Color.green())
+            await ctx.send(embed=embed, delete_after=90)
+        else:
+            embed_list, nchars = [], 0
+            pages = math.ceil(len(fmt)/self.MAX_CHARACTERS)
+            for i in range(pages):
+                if i+1 < pages:
+                    next_step = self._page_end(fmt[nchars:nchars+self.MAX_CHARACTERS])
+                    embed_list.append(Embed(title=f'Queue for {ctx.guild.name}', color=Color.green()).add_field(
+                        name=player.actual_song.title, value=fmt[nchars:nchars+next_step]+f"\nPage {i+1}/{pages}"))
+                    nchars += next_step
+                else:
+                    embed_list.append(Embed(title=f'Queue for {ctx.guild.name}', color=Color.green()).add_field(
+                        name=player.actual_song.title, value=fmt[nchars::]+f"\nPage {i+1}/{pages}"))
+            paginator = Pagination.CustomEmbedPaginator(ctx, remove_reactions=True)
+            paginator.add_reaction('⏮️', "first")
+            paginator.add_reaction('⏪', "back")
+            paginator.add_reaction('⏩', "next")
+            paginator.add_reaction('⏭️', "last")
+            await paginator.run(embed_list)
 
-        await ctx.send(embed=embed, delete_after=90)
 
     @commands.command(name="shuffle", aliases=["shff"])
     async def shuffle(self, ctx):
@@ -246,7 +263,6 @@ class music_commands(commands.Cog):
             else:
                 embed_list.append(Embed(color=Color.green()).add_field(
                     name=player.actual_song.title, value=song.lyrics[self.MAX_CHARACTERS*i::]+f"\nPage {i+1}/{pages}"))
-                print(song.lyrics[self.MAX_CHARACTERS*i::])
         paginator = Pagination.CustomEmbedPaginator(ctx, remove_reactions=True)
         paginator.add_reaction('⏮️', "first")
         paginator.add_reaction('⏪', "back")
@@ -274,6 +290,9 @@ class music_commands(commands.Cog):
             del self.players[guild.id]
         except KeyError:
             pass
+
+    def _page_end(self, text):
+        return text.rfind("\n")
 
     async def __local_check(self, ctx):
         if not ctx.guild:
