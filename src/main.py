@@ -4,13 +4,11 @@ from music_commands import music_commands
 from fighting_commands import fighting_commands
 from game_commands import game_commands
 
-import configparser
+import os
 
-config = configparser.ConfigParser()
-config.read("config.ini")
-TOKEN = config["TOKENS"]["discord"]
+TOKEN = os.getenv("DISCORD_TOKEN")
 
-bot = commands.Bot(command_prefix="-")
+bot = commands.Bot(command_prefix="¡")
 
 @bot.event
 async def on_ready():

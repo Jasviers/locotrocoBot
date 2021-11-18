@@ -1,4 +1,6 @@
 src/token.txt
-src/__pycache__/*
-config.ini
+src/__pycache__
+config.zsh
 locotrocoBot/*
+terraform/.*
+terraform/terraform.*
