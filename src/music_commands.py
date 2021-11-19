@@ -1,208 +1,313 @@
-from discord import channel, Embed
+from discord import Embed, Color
 from discord.ext import commands
 from discord.utils import get
+import discord
 from youtube_dl import YoutubeDL
-from discord import FFmpegPCMAudio
 from urllib.parse import urlparse
 from DiscordUtils import Pagination
 import lyricsgenius
+from musicPlayer import MusicPlayer, InvalidVoiceChannel, VoiceConnectionError, YTDLSource
 
-import configparser
+import traceback
+import itertools
 import asyncio
-import random
 import math
+import sys
 import re
+import os
 
 class music_commands(commands.Cog):
 
     def __init__(self, bot):
-        self.config = configparser.ConfigParser()
-        self.config.read("config.ini")
         self.bot = bot
-        self.genius = lyricsgenius.Genius(self.config["TOKENS"]["genius"])
-        self.queue = []
-        self.actual_song = ""
-        self.voice = None
+        self.players = {}
+        self.genius = lyricsgenius.Genius(os.getenv("GENIUS_TOKEN"))
         self.tiratela_url = "https://www.youtube.com/watch?v=lHvPohMa_ak"
         self.a = "https://www.youtube.com/watch?v=A30gsOSHswM"
-        self.LIMIT = 150
+        self.fart = "https://www.youtube.com/watch?v=W_FRPoJIrlI"
         self.MAX_CHARACTERS = 1000
-        self.YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
+        self.YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
+        self.ytdl = YoutubeDL(self.YDL_OPTIONS)
         self.playlist_re = re.compile(r"\b(list)\b")
         self.watch_re = re.compile(r"\b(watch)\b")
 
     @commands.command(name="play", aliases=["p"])
     async def play(self, ctx, *args):
         if not args:
-            await ctx.send("Song name is required", delete_after=15)
+            await ctx.send(embed=Embed(title="", description="Song name is required", color=Color.green()), delete_after=60)
             return
         query = " ".join(args)
-        try:
-            await self.join(ctx)
-        except:
-            return
-        try:
-            for s in self._search(query):
-                self.queue.append(s)
-        except Exception as e:
-            print(f"Error: {e}")
-            await ctx.send("Song not found", delete_after=15)
-        if not self.voice.is_playing():
-            self._play(ctx)   
+        voice = ctx.voice_client
+
+        if not voice:
+            await ctx.invoke(self.join)
+
+        player = self._get_player(ctx)
+
+        url_result = urlparse(query)
+        if all([url_result.scheme, url_result.netloc, url_result.path, url_result.query]) and self.playlist_re.search(url_result.query):
+            if self.watch_re.search(query):
+                list_query = [i for i in url_result.query.split("&") if self.playlist_re.search(i)]
+                query = "".join([url_result.netloc, "/playlist?", list_query[0]])
+            sources = await YTDLSource.create_sources(ctx, query, loop=self.bot.loop)
+            for source in sources:
+                await player.queue.put(source)            
+        else:
+            source = await YTDLSource.create_source(ctx, query, loop=self.bot.loop)
+            await player.queue.put(source)
 
     @commands.command(name="tiratela")
     async def tiratela(self, ctx):
-        try:
-            await self.join(ctx)
-        except:
-            return
-        try:
-            self.queue = self._search(self.tiratela_url) + self.queue
-        except:
-            await ctx.send("Unexpected error", delete_after=15)
-        if not self.voice.is_playing():
-            await self._play(ctx)
-        else:
-            await self.skip(ctx)
+        voice = ctx.voice_client
+        if not voice:
+            await ctx.invoke(self.join)
+
+        player = self._get_player(ctx)
+
+        source = await YTDLSource.create_source(ctx, self.tiratela_url, loop=self.bot.loop)
+
+        await player.queue.put(source)
 
     @commands.command(name="a")
-    async def a_function(self, ctx):
-        try:
-            await self.join(ctx)
-        except:
-            return
-        try:
-            self.queue = self._search(self.a) + self.queue
-        except:
-            await ctx.send("Unexpected error", delete_after=15)
-        if not self.voice.is_playing():
-            await self._play(ctx)
-        else:
-            await self.skip(ctx)
+    async def a(self, ctx):
+        voice = ctx.voice_client
+        if not voice:
+            await ctx.invoke(self.join)
+
+        player = self._get_player(ctx)
+
+        source = await YTDLSource.create_source(ctx, self.a, loop=self.bot.loop)
+
+        await player.queue.put(source)
+
+    @commands.command(name="fart")
+    async def fart(self, ctx):
+        voice = ctx.voice_client
+        if not voice:
+            await ctx.invoke(self.join)
+
+        player = self._get_player(ctx)
+
+        source = await YTDLSource.create_source(ctx, self.fart, loop=self.bot.loop)
+
+        await player.queue.put(source)
 
     @commands.command(name="queue", aliases=["q"])
     async def queue_function(self, ctx):
-        if self.queue or self.actual_song:
-            song_list = f"1- {self.actual_song}\n"+"\n".join(f"{i+2}- {j['title']}" for i, j in enumerate(self.queue))
-            await ctx.send(song_list, delete_after=15)
+        vc = ctx.voice_client
+        if not vc or not vc.is_connected():
+            embed = Embed(title="", description="I'm not connected to a voice channel", color=Color.green())
+            return await ctx.send(embed=embed, delete_after=60)
+
+        player = self._get_player(ctx)
+        if player.queue.empty():
+            embed = Embed(title="", description="Queue is empty", color=Color.green())
+            return await ctx.send(embed=embed, delete_after=60)
+
+        seconds = vc.source.duration % (24 * 3600) 
+        hour = seconds // 3600
+        seconds %= 3600
+        minutes = seconds // 60
+        seconds %= 60
+        if hour > 0:
+            duration = "%dh %02dm %02ds" % (hour, minutes, seconds)
         else:
-            await ctx.send("Queue is empty", delete_after=15)
+            duration = "%02dm %02ds" % (minutes, seconds)
 
-    @commands.command(name='playing', aliases=['current', 'currentsong', 'crt'])
-    async def now_playing(self, ctx):
-        if not self.voice and not self.voice.is_connected:
-            return await ctx.send("Not connected", delete_after=15)
-        if not self.voice.is_playing():
-            return await ctx.send("Not current play song", delete_after=15)
-        return await ctx.send(f'**Now Playing:** `{self.actual_song}` ')
-
-    @commands.command(name="shuffle", aliases=["shff"])
-    async def shuffle(self, ctx):
-        if self.queue:
-            random.shuffle(self.queue)
-
-    @commands.command(name="skip", aliases=["s", "next", "nxt"])
-    async def skip(self, ctx):
-        if self.voice and self.voice.is_playing():
-            self.voice.stop()
-            self._play(ctx)
-
-    @commands.command(name="stop", aliases=["st", "clear", "clr"])
-    async def stop(self, ctx):
-        if self.voice.is_playing():
-            self.voice.stop()
-            self.queue = []
-            self.actual_song = ""
-
-    @commands.command(name="resume", aliases=["rs"])
-    async def resume(self, ctx):
-        if self.voice and not self.voice.is_playing():
-            self.voice.resume()
-
-    @commands.command(name="pause", aliases=["ps"])
-    async def pause(self, ctx):
-        if self.voice and self.voice.is_playing():
-            self.voice.pause()
-
-    @commands.command(name="join", aliases=["jn"])
-    async def join(self, ctx):
-        channel = ctx.author.voice.channel
-        if not channel:
-            return 
-        if self.voice and self.voice.is_connected():
-            if self.voice.channel == channel:
-                pass
-            else:
-                await self.voice.move_to(channel)
+        upcoming = list(itertools.islice(player.queue._queue, 0, int(len(player.queue._queue))))
+        fmt = '\n'.join(f"`{(upcoming.index(_)) + 1}.` [{_['title']}]({_['webpage_url']}) | ` Requested by: {_['requester']}`\n" for _ in upcoming)
+        fmt = f"\n__Now Playing__:\n[{vc.source.title}]({vc.source.web_url}) | ` {duration} Requested by: {vc.source.requester}`\n\n__Up Next:__\n" + fmt + f"\n**{len(upcoming)} songs in queue**"
+        if len(fmt) < self.MAX_CHARACTERS:
+            embed = Embed(title=f'Queue for {ctx.guild.name}', description=fmt, color=Color.green())
+            await ctx.send(embed=embed, delete_after=90)
         else:
-            self.voice = await channel.connect()
-
-    @commands.command(name="leave", aliases=["lv"])
-    async def leave(self, ctx):
-        if self.voice and self.voice.is_connected():
-            await self.stop(ctx)
-            await ctx.voice_client.disconnect()
-
-    @commands.command(name="lyrics", aliases=["lcs"])
-    async def lyrics(self, ctx):
-        if self.actual_song:
-            try:
-                song = self.genius.search_song(self.actual_song)
-            except:
-                await ctx.send("Song not found", delete_after=15)
-                return
-            embed_list = []
-            pages = math.ceil(len(song.lyrics)/self.MAX_CHARACTERS)
-            print(pages)
+            embed_list, nchars = [], 0
+            pages = math.ceil(len(fmt)/self.MAX_CHARACTERS)
             for i in range(pages):
                 if i+1 < pages:
-                    embed_list.append(Embed(color=ctx.author.color).add_field(
-                        name=self.actual_song, value=song.lyrics[self.MAX_CHARACTERS*i:self.MAX_CHARACTERS*(i+1)]+f"\nPage {i+1}/{pages}"))
+                    next_step = self._page_end(fmt[nchars:nchars+self.MAX_CHARACTERS])
+                    embed_list.append(Embed(title=f'Queue for {ctx.guild.name}', color=Color.green()).add_field(
+                        name=player.actual_song.title, value=fmt[nchars:nchars+next_step]+f"\nPage {i+1}/{pages}"))
+                    nchars += next_step
                 else:
-                    embed_list.append(Embed(color=ctx.author.color).add_field(
-                        name=self.actual_song, value=song.lyrics[self.MAX_CHARACTERS*i::]+f"\nPage {i+1}/{pages}"))
-                    print(song.lyrics[self.MAX_CHARACTERS*i::])
+                    embed_list.append(Embed(title=f'Queue for {ctx.guild.name}', color=Color.green()).add_field(
+                        name=player.actual_song.title, value=fmt[nchars::]+f"\nPage {i+1}/{pages}"))
             paginator = Pagination.CustomEmbedPaginator(ctx, remove_reactions=True)
             paginator.add_reaction('⏮️', "first")
             paginator.add_reaction('⏪', "back")
             paginator.add_reaction('⏩', "next")
             paginator.add_reaction('⏭️', "last")
             await paginator.run(embed_list)
-        else:
-            await ctx.send("No song playing", delete_after=15)
 
-    def _play(self, ctx):
-        if self.queue:
-            self.actual_song = self.queue[0]["title"]
-            next_song = self.queue[0]["source"]
-            self.queue.pop(0)
-            self.voice.play(FFmpegPCMAudio(next_song, **self.FFMPEG_OPTIONS), after=lambda x: self._play(ctx))
-        else:
-            self.actual_song = ""
 
-    def _search(self, query):
-        url_result = urlparse(query)
-        i = 0
-        vlist = []
-        if all([url_result.scheme, url_result.netloc, url_result.path]):
-            if url_result.query and self.playlist_re.search(url_result.query):
-                if self.watch_re.search(query):
-                    list_query = [i for i in url_result.query.split("&") if self.playlist_re.search(i)]
-                    query = "".join([url_result.netloc, "/playlist?", list_query[0]])
-                with YoutubeDL(self.YDL_OPTIONS) as ydl:
-                    info = ydl.extract_info(query, download=False)
-                entries_len = len(info['entries'])
-                while i < entries_len and i < self.LIMIT:
-                    elem = info['entries'][i]
-                    vlist.append({'source': elem['formats'][0]['url'], 'title': elem['title']})
-                    i += 1
-                return vlist
+    @commands.command(name="shuffle", aliases=["shff"])
+    async def shuffle(self, ctx):
+        vc = ctx.voice_client
+        if not vc or not vc.is_connected():
+            embed = Embed(title="", description="I'm not connected to a voice channel", color=Color.green())
+            return await ctx.send(embed=embed, delete_after=60)
+        player = self._get_player(ctx)
+        if player.queue.empty():
+            embed = Embed(title="", description="queue is empty", color=Color.green())
+            return await ctx.send(embed=embed, delete_after=60)
+        player.shuffle()
+
+    @commands.command(name="skip", aliases=["s", "next", "nxt"])
+    async def skip(self, ctx):
+        vc = ctx.voice_client
+        if not vc or not vc.is_connected():
+            embed = Embed(title="", description="I'm not connected to a voice channel", color=Color.green())
+            return await ctx.send(embed=embed, delete_after=60)
+
+        if vc.is_paused():
+            pass
+        elif not vc.is_playing():
+            return
+        vc.stop()
+
+    @commands.command(name="stop", aliases=["st", "clear", "clr"])
+    async def stop(self, ctx):
+        vc = ctx.voice_client
+        if not vc or not vc.is_connected():
+            embed = Embed(title="", description="I'm not connected to a voice channel", color=Color.green())
+            return await ctx.send(embed=embed, delete_after=60)
+
+        player = self._get_player(ctx)
+        player.queue._queue.clear()
+        vc.stop()
+        await ctx.send(embed=Embed(title="", description="Stoped", color=Color.green()), delete_after=60)
+
+    @commands.command(name="resume", aliases=["rs"])
+    async def resume(self, ctx):
+        vc = ctx.voice_client
+        if not vc or not vc.is_connected():
+            embed = Embed(title="", description="I'm not connected to a voice channel", color=discord.Color.green())
+            return await ctx.send(embed=embed, delete_after=60)
+        elif not vc.is_paused():
+            return
+
+        vc.resume()
+        await ctx.send(embed=Embed(title="", description="Resuming", color=discord.Color.green()), delete_after=60)
+
+    @commands.command(name="pause", aliases=["ps"])
+    async def pause(self, ctx):
+        vc = ctx.voice_client
+        if not vc or not vc.is_playing():
+            embed = Embed(title="", description="I am currently not playing anything", color=discord.Color.green(), delete_after=60)
+            return await ctx.send(embed=embed)
+        elif vc.is_paused():
+            return
+
+        vc.pause()
+        await ctx.send(embed=Embed(title="", description="Paused", color=discord.Color.green()), delete_after=60)
+
+    @commands.command(name="join", aliases=["jn"])
+    async def join(self, ctx, channel=None):
+        if not channel:       
+            try:
+                channel = ctx.author.voice.channel
+            except AttributeError:
+                embed = Embed(title="", description="No channel to join. Please call `¡join` from a voice channel.", color=Color.green())
+                await ctx.send(embed=embed, delete_after=60)
+                raise InvalidVoiceChannel('No channel to join. Please either specify a valid channel or join one.')
+        voice = ctx.voice_client
+        if voice:
+            if voice.channel.id == channel.id:
+                return
             else:
-                with YoutubeDL(self.YDL_OPTIONS) as ydl:
-                    info = ydl.extract_info(query, download=False)
+                try:
+                    await voice.move_to(channel)
+                except asyncio.TimeoutError:
+                    raise VoiceConnectionError(f'Connecting to channel: <{channel}> timed out.')
         else:
-            with YoutubeDL(self.YDL_OPTIONS) as ydl:
-                info = ydl.extract_info(f"ytsearch:{query}", download=False)['entries'][0]
-        return [{'source': info['formats'][0]['url'], 'title': info['title']}]
+            try:
+                await channel.connect()
+            except asyncio.TimeoutError:
+                raise VoiceConnectionError(f'Connecting to channel: <{channel}> timed out.')
+        await ctx.send(embed=Embed(title="", description=f'Joined `{channel}`', color=Color.green()), delete_after=10)
+
+    @commands.command(name="leave", aliases=["lv"])
+    async def leave(self, ctx):
+        vc = ctx.voice_client
+        if not vc or not vc.is_connected():
+            embed = Embed(title="", description="I'm not connected to a voice channel", color=Color.green())
+            return await ctx.send(embed=embed, delete_after=60)
+
+        await ctx.send(embed=Embed(title="", description="Syccesfully disconnected", color=Color.green()), delete_after=60)
+        await self.cleanup(ctx.guild)
+
+    @commands.command(name="lyrics", aliases=["lcs"])
+    async def lyrics(self, ctx):
+        vc = ctx.voice_client
+        if not vc or not vc.is_connected():
+            embed = Embed(title="", description="I'm not connected to a voice channel", color=Color.green())
+            return await ctx.send(embed=embed, delete_after=60)
+        player = self._get_player(ctx)
+        if not player.actual_song:
+            embed = Embed(title="", description="I am currently not playing anything", color=Color.green())
+            return await ctx.send(embed=embed, delete_after=60)
+
+        try:
+            song = self.genius.search_song(player.actual_song.title)
+        except:
+            await ctx.send(embed=Embed(title="", description="Song lyrics not found", color=Color.green()), delete_after=60)
+            return
+        embed_list = []
+        pages = math.ceil(len(song.lyrics)/self.MAX_CHARACTERS)
+        for i in range(pages):
+            if i+1 < pages:
+                embed_list.append(Embed(color=Color.green()).add_field(
+                    name=player.actual_song.title, value=song.lyrics[self.MAX_CHARACTERS*i:self.MAX_CHARACTERS*(i+1)]+f"\nPage {i+1}/{pages}"))
+            else:
+                embed_list.append(Embed(color=Color.green()).add_field(
+                    name=player.actual_song.title, value=song.lyrics[self.MAX_CHARACTERS*i::]+f"\nPage {i+1}/{pages}"))
+        paginator = Pagination.CustomEmbedPaginator(ctx, remove_reactions=True)
+        paginator.add_reaction('⏮️', "first")
+        paginator.add_reaction('⏪', "back")
+        paginator.add_reaction('⏩', "next")
+        paginator.add_reaction('⏭️', "last")
+        await paginator.run(embed_list)
+
+    
+    def _get_player(self, ctx):
+        try:
+            player = self.players[ctx.guild.id]
+        except KeyError:
+            player = MusicPlayer(ctx)
+            self.players[ctx.guild.id] = player
+
+        return player
+
+    async def cleanup(self, guild):
+        try:
+            await guild.voice_client.disconnect()
+        except AttributeError:
+            pass
+
+        try:
+            del self.players[guild.id]
+        except KeyError:
+            pass
+
+    def _page_end(self, text):
+        return text.rfind("\n")
+
+    async def __local_check(self, ctx):
+        if not ctx.guild:
+            raise commands.NoPrivateMessage
+        return True
+
+    async def __error(self, ctx, error):
+        if isinstance(error, commands.NoPrivateMessage):
+            try:
+                return await ctx.send(embed=Embed(title="", description='This command can not be used in Private Messages.', color=Color.green()))
+            except discord.HTTPException:
+                pass
+        elif isinstance(error, InvalidVoiceChannel):
+            await ctx.send(embed=Embed(title="", description='Error connecting to Voice Channel.\n \
+             Please make sure you are in a valid channel or provide me with one', color=Color.green()))
+        print('Ignoring exception in command {}:'.format(ctx.command), file=sys.stderr)
+        traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+

@@ -2,13 +2,19 @@ FROM python:3.8-slim
 
 WORKDIR /locotrocoBot
 
-RUN apt update && apt install -y ffmpeg
+RUN apt update && apt install -y --no-install-recommends ffmpeg
 
 COPY requirements.txt ./
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-COPY . .
-
 EXPOSE 8080
 
-CMD [ "python", "./src/main.py" ]
+ARG DISCORD_TOKEN
+ARG GENIUS_TOKEN
+
+ENV DISCORD_TOKEN=${DISCORD_TOKEN}
+ENV GENIUS_TOKEN=${GENIUS_TOKEN}
+
+COPY ./src .
+
+CMD [ "python", "./main.py" ]
