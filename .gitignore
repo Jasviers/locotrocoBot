@@ -3,4 +3,5 @@ src/__pycache__
 config.zsh
 locotrocoBot/*
 terraform/.*
-terraform/terraform.*
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
