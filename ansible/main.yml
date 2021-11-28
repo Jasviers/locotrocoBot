@@ -1,0 +1,39 @@
+---
+- hosts: discord
+  become: true
+
+  tasks:
+
+  - name: Install pip3
+    apt:
+      update_cache: true
+      name: python3-pip
+
+  - name: Install aptitude using apt
+    apt: name=aptitude state=present update_cache=true force_apt_get=true
+
+  - name: Install required system packages
+    apt: name={{ item }} state=present update_cache=yes
+    loop: ['apt-transport-https', 'ca-certificates', 'curl', 'software-properties-common', 'virtualenv', 'python3-setuptools']
+
+  - name: Add Docker GPG apt Key
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+
+  - name: Add Docker Repository
+    apt_repository:
+      repo: deb https://download.docker.com/linux/ubuntu bionic stable
+      state: present
+
+  - name: Update apt and install docker-ce
+    apt: update_cache=yes name=docker-ce state=present
+
+  - name: Install docker-py
+    pip: name=docker-py
+
+  - name: Enable Docker services
+    service:
+      name: "docker"
+      state: started
+      enabled: true
