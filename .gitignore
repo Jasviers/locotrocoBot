@@ -1,12 +1,6 @@
-<<<<<<< HEAD
-src/__pycache__/*
-config.ini
-locotrocoBot/*
-=======
 src/token.txt
 src/__pycache__
 config.zsh
 locotrocoBot/*
 terraform/.*
 terraform/terraform.*
->>>>>>> release/2.0

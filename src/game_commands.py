@@ -15,7 +15,7 @@ class game_commands(commands.Cog):
     async def slots(self, ctx):
         selection = [choice(self.slot_icons) for _ in range(3)]
         result = "[{} {} {}]\n".format(*selection)
-        if selection[0]==selection[1] and selection[1]==selection[2]:
+        if all(i==selection[0] for i in  selection):
             await ctx.send(f'{result}You win!!!')
         else:
             await ctx.send(f'{result}Try again')
