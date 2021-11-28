@@ -24,6 +24,8 @@ class fighting_commands(commands.Cog):
         "Urien", "Akuma", "Kolin", "Ed", "Abigail", "Menat", "Zeku%20(Old)",
         "Zeku%20(Young)", "Sakura", "Blanka", "Falke", "Cody", "G", "Sagat", "Kage",
         "E.Honda", "Lucia", "Poison", "Gill", "Seth", "Dan", "Rose", "Oro", "Akira"]
+        self.sfv_characters.sort()
+        self.sfv_zeku_hate.sort()
 
     ## tiratela command correspond to this place
 
