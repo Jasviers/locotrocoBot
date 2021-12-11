@@ -118,6 +118,7 @@ class MusicPlayer:
                 async with timeout(300):
                     source = await self.queue.get()
             except asyncio.TimeoutError:
+                await self.channel.send(embed=discord.Embed(title="", description="Hasta Luego!!!", color=discord.Color.green()))
                 return self.destroy(self.guild)
 
             if not isinstance(source, YTDLSource):
