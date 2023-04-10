@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from youtube_dl import YoutubeDL
+from yt_dlp import YoutubeDL
 
 import asyncio
 from async_timeout import timeout
@@ -12,11 +12,11 @@ LIMIT = 150
 
 ytdlopts = {
     'format': 'bestaudio',
-    'noplaylist': 'True'}
+    'noplaylist': 'False'}
 
 ffmpegopts = {
-    'before_options': '-nostdin',
-    'options': '-vn'
+    'options': '-vn',
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 }
 
 ytdl = YoutubeDL(ytdlopts)
@@ -33,9 +33,10 @@ class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, requester):
         super().__init__(source)
         self.requester = requester
-
+        
         self.title = data.get('title')
         self.web_url = data.get('webpage_url')
+        
         self.duration = data.get('duration')
 
     def __getitem__(self, item: str):
@@ -88,7 +89,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         to_run = partial(ytdl.extract_info, url=data['webpage_url'], download=False)
         data = await loop.run_in_executor(None, to_run)
 
-        return cls(discord.FFmpegPCMAudio(data['url']), data=data, requester=requester)
+        return cls(discord.FFmpegPCMAudio(data['url'], **ffmpegopts), data=data, requester=requester)
 
 
 class MusicPlayer:

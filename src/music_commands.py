@@ -2,7 +2,7 @@ from discord import Embed, Color
 from discord.ext import commands
 from discord.utils import get
 import discord
-from youtube_dl import YoutubeDL
+from yt_dlp import YoutubeDL
 from urllib.parse import urlparse
 from DiscordUtils import Pagination
 import lyricsgenius
@@ -56,6 +56,7 @@ class music_commands(commands.Cog):
                 await player.queue.put(source)            
         else:
             source = await YTDLSource.create_source(ctx, query, loop=self.bot.loop)
+            print(source)
             await player.queue.put(source)
 
     @commands.command(name="tiratela")
@@ -115,6 +116,8 @@ class music_commands(commands.Cog):
             duration = "%dh %02dm %02ds" % (hour, minutes, seconds)
         else:
             duration = "%02dm %02ds" % (minutes, seconds)
+
+        print(f"Calculo de duración: {duration}")
 
         upcoming = list(itertools.islice(player.queue._queue, 0, int(len(player.queue._queue))))
         fmt = '\n'.join(f"`{(upcoming.index(_)) + 1}.` [{_['title']}]({_['webpage_url']}) | ` Requested by: {_['requester']}`\n" for _ in upcoming)

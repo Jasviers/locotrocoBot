@@ -38,6 +38,6 @@ class fighting_commands(commands.Cog):
 
     @commands.command(name="framedata", aliases=["fd"])
     async def frame_data(self, ctx):
-        kekos = "\n".join(f"[{keko}.png]({self.framedata_url+keko_url})" for keko, keko_url in zip(self.sfv_characters, self.sfv_zeku_hate))
+        kekos = "\n".join(f"[{keko}]({self.framedata_url+keko_url})" for keko, keko_url in zip(self.sfv_characters, self.sfv_zeku_hate))
         kekos_embed = Embed(title="FrameData from Street Fighter V:", description=kekos, color=Color.green())
         await ctx.send(embed=kekos_embed)
